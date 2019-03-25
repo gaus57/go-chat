@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -48,9 +49,9 @@ type Client struct {
 }
 
 type Message struct {
-	user map[string]string
+	user map[string]string `json:"user"`
 
-	text []byte
+	text []byte `json:"text"`
 }
 
 func (c *Client) readPump() {
@@ -65,32 +66,37 @@ func (c *Client) readPump() {
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
-		if c.room == nil {
-			var login struct {
-				room string
+		_, text, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("error: %v", err)
+			}
+			break
+		}
 
-				user map[string]string
-			}
-			err := c.conn.ReadJSON(&login)
+		if c.room == nil {
+			var data map[string]interface{}
+			err := json.Unmarshal(text, &data)
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Printf("error: %v", err)
-				}
+				log.Println("json unmarshal:", err)
 				break
 			}
-			c.user = login.user
-			invite := &Invite{name: login.room, client: c}
-			c.chat.enter <- invite
+			if user, ok := data["user"].(map[string]string); ok {
+				log.Printf("login user: %v", user)
+				c.user = user
+			}
+			if roomName, ok := data["room"].(string); ok {
+				log.Println("login room ", roomName)
+				invite := &Invite{name: roomName, client: c}
+				c.chat.enter <- invite
+			} else {
+				log.Println("login err: invalid room")
+				break
+			}
 		} else {
-			_, text, err := c.conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Printf("error: %v", err)
-				}
-				break
-			}
 			text = bytes.TrimSpace(bytes.Replace(text, newline, space, -1))
 			message := &Message{user: c.user, text: text}
+			log.Printf("broadcast message: %v", message)
 			c.room.broadcast <- message
 		}
 	}
@@ -111,8 +117,12 @@ func (c *Client) writePump() {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-
-			err := c.conn.WriteJSON(message)
+			// msg, err := json.Marshal(message)
+			// if err != nil {
+			// 	log.Println("json marshal error:", err)
+			// 	return
+			// }
+			err := c.conn.WriteMessage(websocket.TextMessage, message.text)
 			if err != nil {
 				return
 			}
