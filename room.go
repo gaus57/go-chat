@@ -11,7 +11,7 @@ type Room struct {
 	clients map[*Client]bool
 
 	// Inbound messages from the clients.
-	broadcast chan *Message
+	broadcast chan []byte
 
 	// Register requests from the clients.
 	register chan *Client
@@ -24,7 +24,7 @@ func newRoom(chat *Chat, name string) *Room {
 	return &Room{
 		name:       name,
 		chat:       chat,
-		broadcast:  make(chan *Message),
+		broadcast:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
@@ -47,11 +47,11 @@ func (room *Room) run() {
 				}
 				close(client.send)
 			}
-		case message := <-room.broadcast:
-			log.Println("broadcast message in room ", room.name)
+		case msg := <-room.broadcast:
+			log.Println("broadcast message in room ", room.name, len(room.clients))
 			for client := range room.clients {
 				select {
-				case client.send <- message:
+				case client.send <- msg:
 				default:
 					close(client.send)
 					delete(room.clients, client)

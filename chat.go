@@ -53,17 +53,13 @@ func (chat *Chat) run() {
 				room.register <- invite.client
 				delete(chat.guests, invite.client)
 			} else {
+				log.Println("create room ", invite.name)
 				room := newRoom(chat, invite.name)
+				chat.rooms[room.name] = room
 				go room.run()
 				room.register <- invite.client
 				delete(chat.guests, invite.client)
 			}
-			// if !ok {
-			// 	room := newRoom(chat, invite.name)
-			// 	go room.run()
-			// }
-			// room.register <- invite.client
-			// delete(chat.guests, invite.client)
 		case room := <-chat.close:
 			log.Println("close room ", room.name)
 			if _, ok := chat.rooms[room.name]; ok {

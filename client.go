@@ -39,19 +39,13 @@ type Client struct {
 
 	chat *Chat
 
-	user map[string]string
+	user map[string]interface{}
 
 	// The websocket connection.
 	conn *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan *Message
-}
-
-type Message struct {
-	user map[string]string `json:"user"`
-
-	text []byte `json:"text"`
+	send chan []byte
 }
 
 func (c *Client) readPump() {
@@ -81,7 +75,7 @@ func (c *Client) readPump() {
 				log.Println("json unmarshal:", err)
 				break
 			}
-			if user, ok := data["user"].(map[string]string); ok {
+			if user, ok := data["user"].(map[string]interface{}); ok {
 				log.Printf("login user: %v", user)
 				c.user = user
 			}
@@ -95,9 +89,12 @@ func (c *Client) readPump() {
 			}
 		} else {
 			text = bytes.TrimSpace(bytes.Replace(text, newline, space, -1))
-			message := &Message{user: c.user, text: text}
-			log.Printf("broadcast message: %v", message)
-			c.room.broadcast <- message
+			message := make(map[string]interface{})
+			message["user"] = c.user
+			message["text"] = string(text)
+			msg, _ := json.Marshal(message)
+			log.Println("broadcast msg:", string(msg))
+			c.room.broadcast <- msg
 		}
 	}
 }
@@ -110,19 +107,15 @@ func (c *Client) writePump() {
 	}()
 	for {
 		select {
-		case message, ok := <-c.send:
+		case msg, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// The hub closed the channel.
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			// msg, err := json.Marshal(message)
-			// if err != nil {
-			// 	log.Println("json marshal error:", err)
-			// 	return
-			// }
-			err := c.conn.WriteMessage(websocket.TextMessage, message.text)
+			log.Println("send msg:", string(msg))
+			err := c.conn.WriteMessage(websocket.TextMessage, msg)
 			if err != nil {
 				return
 			}
@@ -141,7 +134,7 @@ func serveChat(chat *Chat, w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	client := &Client{chat: chat, conn: conn, send: make(chan *Message)}
+	client := &Client{chat: chat, conn: conn, send: make(chan []byte)}
 	client.chat.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in

@@ -34,17 +34,15 @@ window.onload = function () {
             appendLog(item);
         };
         conn.onmessage = function (evt) {
-            console.log('message');
-            var messages = evt.data.split('\n');
-            for (var i = 0; i < messages.length; i++) {
-                var item = document.createElement("div");
-                item.innerText = messages[i];
-                appendLog(item);
-            }
+            var msg = JSON.parse(evt.data);
+            console.log('message', msg);
+            var item = document.createElement("div");
+            item.innerText = `${msg.user.name}: ${msg.text}`;
+            appendLog(item);
         };
         conn.onopen = function (evt) {
             console.log('open');
-            conn.send(JSON.stringify({room: 'test', user: {name: 'Tester', image: 'image'}}));
+            conn.send(JSON.stringify({room: 'test', user: {name: `Аноним-${Math.round(Math.random()*1000)}`, image: 'image'}}));
         }
     } else {
         var item = document.createElement("div");
